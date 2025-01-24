@@ -11,3 +11,7 @@ pyvenv.cfg
 share/
 bin/
 lib/
+xai_methods/__pycache__/
+xai_methods/output/*
+test.png
+YOLOX/
