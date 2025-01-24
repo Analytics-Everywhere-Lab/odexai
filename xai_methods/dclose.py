@@ -3,7 +3,6 @@ import math
 import numpy as np
 import torch
 from torchvision import transforms as T
-import cv2
 import torchvision
 from PIL import Image
 from scipy import spatial
@@ -11,7 +10,6 @@ from skimage.segmentation import slic
 import tqdm
 from xai_methods.tool import get_prediction, bbox_iou
 from yolox.utils import postprocess
-from utils import *
 
 
 class DCLOSE(object):
@@ -259,29 +257,3 @@ class DCLOSE(object):
                     heatmap[idx_obj] *= res[self.n_levels - 1 - i][idx_obj]
 
         return heatmap
-
-
-if __name__ == "__main__":
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
-    model.eval().to(device)
-
-    # read image
-    img_path = "./images/000000504635.jpg"
-    output = "./results/faster_rcnn"
-    transform = T.Compose([T.ToTensor()])
-    img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    org_h, org_w, _ = img.shape
-    # preprocess image
-    img = transform(img)
-    img_np = img.numpy().transpose(1, 2, 0)
-    img_np = (255 * img_np).astype(np.uint8)
-    name_img = img_path.split("/")[-1].split(".")[0]
-
-    dclose = DCLOSE(
-        arch="faster-rcnn", model=model, img_size=(img.shape[1:]), n_samples=4000
-    )
-    # forward image
-    prediction = model([img.to(device)])
-    box = get_prediction(prediction, 0.8)
-    rs = dclose(img, box)
