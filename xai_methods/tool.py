@@ -4,100 +4,7 @@ import math
 import cv2
 import numpy as np
 from yolox.data.datasets import COCO_CLASSES
-
-coco = [
-    "__background__",
-    "person",
-    "bicycle",
-    "car",
-    "motorcycle",
-    "airplane",
-    "bus",
-    "train",
-    "truck",
-    "boat",
-    "traffic light",
-    "fire hydrant",
-    "N/A",
-    "stop sign",
-    "parking meter",
-    "bench",
-    "bird",
-    "cat",
-    "dog",
-    "horse",
-    "sheep",
-    "cow",
-    "elephant",
-    "bear",
-    "zebra",
-    "giraffe",
-    "N/A",
-    "backpack",
-    "umbrella",
-    "N/A",
-    "N/A",
-    "handbag",
-    "tie",
-    "suitcase",
-    "frisbee",
-    "skis",
-    "snowboard",
-    "sports ball",
-    "kite",
-    "baseball bat",
-    "baseball glove",
-    "skateboard",
-    "surfboard",
-    "tennis racket",
-    "bottle",
-    "N/A",
-    "wine glass",
-    "cup",
-    "fork",
-    "knife",
-    "spoon",
-    "bowl",
-    "banana",
-    "apple",
-    "sandwich",
-    "orange",
-    "broccoli",
-    "carrot",
-    "hot dog",
-    "pizza",
-    "donut",
-    "cake",
-    "chair",
-    "couch",
-    "potted plant",
-    "bed",
-    "N/A",
-    "dining table",
-    "N/A",
-    "N/A",
-    "toilet",
-    "N/A",
-    "tv",
-    "laptop",
-    "mouse",
-    "remote",
-    "keyboard",
-    "cell phone",
-    "microwave",
-    "oven",
-    "toaster",
-    "sink",
-    "refrigerator",
-    "N/A",
-    "book",
-    "clock",
-    "vase",
-    "scissors",
-    "teddy bear",
-    "hair drier",
-    "toothbrush",
-]
+from data.coco.coco_dict import COCO_FASTERRCNN_INDEX_DICT, COCO_FASTERRCNN_TEXT_ARR
 
 
 def visual(img, saliency_map, target_box, arch, save_file=None):
@@ -153,7 +60,7 @@ def visual(img, saliency_map, target_box, arch, save_file=None):
             fig.axes[i - 1].text(
                 x_min,
                 y_min,
-                "{} - {:.2f}".format(coco[int(id_obj)], scores),
+                "{} - {:.2f}".format(COCO_FASTERRCNN_TEXT_ARR[int(id_obj)], scores),
                 size=8,
                 style="italic",
                 bbox=dict(boxstyle="round,pad=0.2", facecolor="green", alpha=0.5),
@@ -166,9 +73,9 @@ def visual(img, saliency_map, target_box, arch, save_file=None):
     # return cp_img
 
 
-def get_prediction(pred, threshold):
+def get_prediction_yolox(pred, threshold):
     """
-    get_prediction
+    get_prediction_yolox
       parameters:
         - img_path - path of the input image
         - threshold - threshold value for prediction score
@@ -195,6 +102,44 @@ def get_prediction(pred, threshold):
     # pred_class = pred_class[:pred_t+1]
     # scores = pred_score[:pred_t+1]
     return np.array(pred_boxes)
+
+
+def get_prediction_fasterrcnn(pred, threshold):
+    """
+    get_prediction_yolox
+      Parameters:
+        - img_path - path of the input image
+        - threshold - threshold value for prediction score
+        - Image is obtained from the image path
+        - the image is converted to image tensor using PyTorch's Transforms
+        - image is passed through the model to get the predictions
+        - class, box coordinates are obtained, but only prediction score > threshold
+          are chosen.
+
+    """
+
+    pred_class = pred[0]["labels"].cpu().numpy()
+    pred_class = [
+        COCO_FASTERRCNN_INDEX_DICT.get(cls, -1) - 1
+        for cls in pred_class
+        if cls in COCO_FASTERRCNN_INDEX_DICT
+    ]  # -1 for background
+
+    pred_boxes = [
+        [(i[0], i[1]), (i[2], i[3])]
+        for i in list(pred[0]["boxes"].cpu().detach().numpy())
+    ]
+    pred_score = list(pred[0]["scores"].cpu().detach().numpy())
+    pred_t = [pred_score.index(x) for x in pred_score if x > threshold]
+    if len(pred_t) == 0:
+        flag = 0.0
+        return flag
+    else:
+        pred_t = pred_t[-1]
+    pred_boxes = pred_boxes[: pred_t + 1]
+    pred_class = pred_class[: pred_t + 1]
+    scores = pred_score[: pred_t + 1]
+    return (pred_boxes, pred_class, scores)
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
