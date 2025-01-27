@@ -4,7 +4,7 @@ from YOLOX.yolox.utils import postprocess
 import YOLOX.yolox.data.data_augment as data_augment
 from metrics.del_ins import del_ins
 from metrics.pp_ebpg import correspond_box, metric
-from xai_methods.dclose import DCLOSE
+from xai_methods.drise import DRISE
 from xai_methods.tool import visual
 from data.coco.dataloader import coco_gt_loader
 import cv2
@@ -14,21 +14,19 @@ from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Get pretrained model and its transform function
 model = models.yolox_l(pretrained=True)
 model.eval()
 transform = data_augment.ValTransform(legacy=False)
-output_dir = "xai_methods/output/dclose"
+output_dir = "xai_methods/output/drise"
 os.makedirs(output_dir, exist_ok=True)
 
-dclose = DCLOSE(arch="yolox", model=model, img_size=(640, 640), n_samples=4000)
+drise = DRISE(arch="yolox", model=model, device=device)
 
 mean_del_auc = []
 mean_ins_auc = []
 mean_ebpg = []
 mean_pg = []
 
-# Load all images in the validation folder
 img_folder = "data/coco/val2017/"
 img_paths = [
     os.path.join(img_folder, img_name)
@@ -45,8 +43,9 @@ for img_path in tqdm(img_paths):
     org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
     h, w, c = org_img.shape
     ratio = min(640 / h, 640 / w)
-    img, _ = transform(org_img, None, (640, 640))
-    img = torch.from_numpy(img).unsqueeze(0).float()
+    transformed_img, _ = transform(org_img, None, (640, 640))
+    transposed_transformed_img = transformed_img.transpose(1, 2, 0)
+    img = torch.from_numpy(transformed_img).unsqueeze(0).float()
     img_np = img.squeeze().numpy().transpose(1, 2, 0).astype(np.uint8)
     file_name = img_path.split("/")[-1]
     name_img = file_name.split(".")[0]
@@ -63,9 +62,9 @@ for img_path in tqdm(img_paths):
             out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True
         )
         box = box[0]
+        rs = drise(transposed_transformed_img, box)
         if box is None:
             continue
-        rs = dclose(img, box)
     # visual(img_np, rs, box.cpu(), arch="yolox", save_file="test.png")
     np.save(f"{output_dir}/{name_img}.npy", rs)
 
@@ -87,6 +86,9 @@ for img_path in tqdm(img_paths):
         ins_auc, count = del_ins(model, img_np, box, saliency_map, "ins", step=2000)
         mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))
         mean_ins_auc.append(np.mean(ins_auc[count != 0] / count[count != 0]))
+    # except Exception as e:
+    #     print(f"Error processing {img_path}: {e}")
+    #     continue
 
 # Calculate mean metrics over all images
 print("Del auc: ", np.mean(mean_del_auc, axis=0))

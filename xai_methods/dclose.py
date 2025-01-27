@@ -8,7 +8,7 @@ from PIL import Image
 from scipy import spatial
 from skimage.segmentation import slic
 import tqdm
-from xai_methods.tool import get_prediction, bbox_iou
+from xai_methods.tool import get_prediction_fasterrcnn_only_boxes, bbox_iou
 from yolox.utils import postprocess
 
 
@@ -156,7 +156,7 @@ class DCLOSE(object):
                 per_img = masks_ts * img.cuda()
                 if self.arch == "yolox":
                     p = self.model(per_img.to(self.device))
-                    p_box, p_index = postprocess(
+                    p_box, _ = postprocess(
                         p,
                         num_classes=80,
                         conf_thre=0.25,
@@ -206,7 +206,7 @@ class DCLOSE(object):
                         )
                 else:
                     p = self.model(per_img.to(self.device))
-                    p_box = get_prediction(p, 0.8)
+                    p_box = get_prediction_fasterrcnn_only_boxes(p, 0.8)
                     if len(p_box) == 0:
                         continue
                     n = p_box.shape[0]

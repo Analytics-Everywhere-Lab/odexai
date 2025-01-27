@@ -25,3 +25,6 @@ pip install -v -e .
 ```
 pip install -r requirements.txt
 ```
+
+## Notes
+- D-CLOSE outputs saliency maps for all predicted boxes from models (YOLOX, FasterRCNN)

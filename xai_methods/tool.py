@@ -73,9 +73,9 @@ def visual(img, saliency_map, target_box, arch, save_file=None):
     # return cp_img
 
 
-def get_prediction_yolox(pred, threshold):
+def get_prediction_fasterrcnn_only_boxes(pred, threshold):
     """
-    get_prediction_yolox
+    get_prediction_fasterrcnn_only_boxes
       parameters:
         - img_path - path of the input image
         - threshold - threshold value for prediction score
@@ -106,7 +106,7 @@ def get_prediction_yolox(pred, threshold):
 
 def get_prediction_fasterrcnn(pred, threshold):
     """
-    get_prediction_yolox
+    get_prediction_fasterrcnn_only_boxes
       Parameters:
         - img_path - path of the input image
         - threshold - threshold value for prediction score
@@ -139,7 +139,7 @@ def get_prediction_fasterrcnn(pred, threshold):
     pred_boxes = pred_boxes[: pred_t + 1]
     pred_class = pred_class[: pred_t + 1]
     scores = pred_score[: pred_t + 1]
-    return (pred_boxes, pred_class, scores)
+    return pred_boxes, pred_class, scores
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
