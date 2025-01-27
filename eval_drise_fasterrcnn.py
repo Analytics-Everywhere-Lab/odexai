@@ -20,7 +20,7 @@ model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
     pretrained=True, weights="DEFAULT"
 )
 model.eval().to(device)
-output_dir = "xai_methods/output/dclose/fasterrcnn"
+output_dir = "xai_methods/output/drise/fasterrcnn"
 os.makedirs(output_dir, exist_ok=True)
 
 mean_del_auc = []
@@ -43,16 +43,15 @@ transform = T.Compose([T.ToTensor()])
 for img_path in tqdm(img_paths):
     img = cv2.imread(img_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # (427, 640, 3)
+    h, w, c = img.shape
     # preprocess image
     inp = transform(img)
     img_np = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
     file_name = img_path.split("/")[-1]
     img_name = file_name.split(".")[0]
-    h, w, c = img.shape
     with torch.no_grad():
         prediction = model([inp.to(device)])
-        rs = get_prediction_fasterrcnn(prediction, 0.8)
-        boxes, pred_cls, pred = rs
+        boxes, pred_cls, pred = get_prediction_fasterrcnn(prediction, 0.8)
         saliency_maps = np.zeros((len(boxes), h, w), dtype=np.float32)
         for i in range(len(boxes)):
             boxes[i].append(pred_cls[i])
@@ -61,7 +60,7 @@ for img_path in tqdm(img_paths):
             arch="fasterrcnn",
             model=model,
             img_size=(h, w),
-            n_samples=100,
+            n_samples=2000,
             device=device,
         )
         # Compute the saliency maps for all boxes
