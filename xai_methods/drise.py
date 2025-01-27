@@ -144,9 +144,6 @@ class DRISE(object):
                     for i in list(p_box[:, :4].cpu().detach().numpy())
                 ]
                 pred_score = list(p_box[:, 4].cpu().detach().numpy())
-                # pred_class = list(prediction[0]['labels'].cpu().numpy())
-                # pred_boxes = [[(i[0], i[1]), (i[2], i[3])] for i in list(prediction[0]['boxes'].cpu().detach().numpy())]
-                # pred_score = list(prediction[0]['scores'].cpu().detach().numpy())
                 pred_t = [pred_score.index(x) for x in pred_score if x > 0.5]
                 if len(pred_t) == 0:
                     continue
@@ -179,7 +176,7 @@ class DRISE(object):
             self.img_size = (h, w)
             saliency_map = np.zeros((h, w), dtype=np.float32)
             target_class = box[2]
-            target_score = box[3]
+            # target_score = box[3]
             target_box = list(box[0]) + list(box[1])
 
             num_batches = (self.n_samples + self.batch_size - 1) // self.batch_size

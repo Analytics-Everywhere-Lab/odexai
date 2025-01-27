@@ -62,25 +62,18 @@ for img_path in tqdm(img_paths):
             box = box[0]
             if box is None:
                 continue
-            rs = dclose(tensor_img, box)
-        # visual(img_np, rs, box.cpu(), arch="yolox", save_file="test.png")
-        np.save(f"{output_dir}/{img_name}.npy", rs)
+            saliency_maps = dclose(tensor_img, box)
+            # visual(img_np, rs, box.cpu(), arch="yolox", save_file="test.png")
+            np.save(f"{output_dir}/{img_name}.npy", saliency_maps)
 
         with torch.no_grad():
-            out = model(tensor_img.to(device))
-            box, index = postprocess(
-                out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True
-            )
-            box = box[0]
-            if box is None:
-                continue
-            saliency_map = np.load(f"{output_dir}/{img_name}.npy")
+            saliency_maps = np.load(f"{output_dir}/{img_name}.npy")
 
             gt_box, idx_correspond = correspond_box(
                 box.cpu().numpy(), info_data[file_name]
             )
             ebpg, pg, count = metric(
-                gt_box, saliency_map[idx_correspond, :, :]
+                gt_box, saliency_maps[idx_correspond, :, :]
             )
             mean_ebpg.append(np.mean(ebpg[count != 0] / count[count != 0]))
             mean_pg.append(np.mean(pg[count != 0] / count[count != 0]))
@@ -88,7 +81,7 @@ for img_path in tqdm(img_paths):
                 model=model,
                 img=img_np,
                 bbox=box,
-                saliency_map=saliency_map,
+                saliency_map=saliency_maps,
                 arch="yolox",
                 mode="del",
                 step=2000,
@@ -97,7 +90,7 @@ for img_path in tqdm(img_paths):
                 model=model,
                 img=img_np,
                 bbox=box,
-                saliency_map=saliency_map,
+                saliency_map=saliency_maps,
                 arch="yolox",
                 mode="ins",
                 step=2000,

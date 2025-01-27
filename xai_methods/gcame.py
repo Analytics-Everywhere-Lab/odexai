@@ -4,7 +4,6 @@ import math
 import numpy as np
 from math import floor
 from tqdm import tqdm
-from utils import *
 import torchvision
 from PIL import Image
 from torch.nn import functional as F
@@ -26,7 +25,7 @@ def create_heatmap(output_width, output_height, p_x, p_y, sigma):
     X = X - floor(p_x)
     Y = Y - floor(p_y)
     D2 = X * X + Y * Y
-    E2 = 2.0 * sigma ** 2
+    E2 = 2.0 * sigma**2
     Exponent = D2 / E2
     mask = np.exp(-Exponent)
     mask = (mask - mask.min()) / (mask.max() - mask.min())
@@ -47,24 +46,26 @@ class GCAME(object):
         """
         self.model = model.eval()
         self.img_size = img_size
-        self.gradients = dict()           
+        self.gradients = dict()
         self.activations = dict()
         self.target_layers = target_layers
         self.handlers = []
 
         # Save gradient values and activation maps
-        def save_grads(key):    
+        def save_grads(key):
             def backward_hook(module, grad_inp, grad_out):
                 g = grad_out[0].detach()
                 self.gradients[key] = g
+
             return backward_hook
 
         def save_fmaps(key):
             def forward_hook(module, inp, output):
-                self.activations[key] = output.detach() 
+                self.activations[key] = output.detach()
+
             return forward_hook
-        
-        for name, module in self.model.named_modules():        
+
+        for name, module in self.model.named_modules():
             if name in self.target_layers:
                 self.handlers.append(module.register_forward_hook(save_fmaps(name)))
                 self.handlers.append(module.register_backward_hook(save_grads(name)))
@@ -80,86 +81,82 @@ class GCAME(object):
         return self.forward(img, box, obj_idx)
 
     def forward(self, img, box, obj_idx=None):
-      """
-      Parameters:
-        - img: Input image in Tensor[1, 3, H, W]
-        - box: The bounding box to analyze Tensor([xmin, ymin, xmax, ymax, p_obj, p_cls, cls])
-        - obj_index: The index of target bounding box in int
-      Returns:
-        - score_saliency_map: The saliency map of target object
-      """
-  
-      eps = 1e-7
-      b, c, h, w = img.shape
-      self.model.zero_grad()
-      # Get the prediction of the model and the index of each predicted bouding box
-      pred = self.model(img)
-      _, index = postprocess(pred, 80, 0.25, 0.45, True)
+        """
+        Parameters:
+          - img: Input image in Tensor[1, 3, H, W]
+          - box: The bounding box to analyze Tensor([xmin, ymin, xmax, ymax, p_obj, p_cls, cls])
+          - obj_index: The index of target bounding box in int
+        Returns:
+          - score_saliency_map: The saliency map of target object
+        """
 
-      # num_objs = box.shape[0]
-      # target_box = box[:4]
-      # target_score = box[4] * box[5]
-      # pred_all_score = pred[0][index[obj_idx]][5:]
+        eps = 1e-7
+        b, c, h, w = img.shape
+        self.model.zero_grad()
+        # Get the prediction of the model and the index of each predicted bouding box
+        pred = self.model(img)
+        _, index = postprocess(pred, 80, 0.25, 0.45, True)
 
-      target_cls = box[6].int()
-      self.model.zero_grad()
-      # Do backward
-      pred[0][index[obj_idx]][target_cls + 5].backward(retain_graph=True)
-      
-      # Create the saliency map
-      score_saliency_map = np.zeros((self.img_size[0], self.img_size[1]))
+        # num_objs = box.shape[0]
+        # target_box = box[:4]
+        # target_score = box[4] * box[5]
+        # pred_all_score = pred[0][index[obj_idx]][5:]
 
-      for key in self.activations.keys():
-        map = self.activations[key]
-        grad = self.gradients[key]
+        target_cls = box[6].int()
+        self.model.zero_grad()
+        # Do backward
+        pred[0][index[obj_idx]][target_cls + 5].backward(retain_graph=True)
 
-        # Select the branch that the target comes out
-        if grad.max().item() == 0 and grad.min().item() == 0:
-          continue
-        
-        map = map.squeeze().cpu().numpy()
-        grad = grad.squeeze().cpu().numpy()
+        # Create the saliency map
+        score_saliency_map = np.zeros((self.img_size[0], self.img_size[1]))
 
-        # Calculate the proportion between the input image and the gradient map
-        stride = self.img_size[0] / grad.shape[1]
-        for j in tqdm(range(map.shape[0])):
-          weighted_map = map[j]
-          mean_grad = np.mean(grad[j])
+        for key in self.activations.keys():
+            map = self.activations[key]
+            grad = self.gradients[key]
 
-          # Get the center of the Gaussian mask
-          id_x, id_y = (grad[j] != 0).nonzero()
-          if len(id_x) == 0 or len(id_y) == 0:
-            continue
-          
-          id_x = id_x[0]
-          id_y = id_y[0]
+            # Select the branch that the target comes out
+            if grad.max().item() == 0 and grad.min().item() == 0:
+                continue
 
-          # Weight the feature map
-          weighted_map = abs(mean_grad) * map[j]
-          kn_size = math.floor(math.sqrt(grad.shape[1] * grad.shape[2]) - 1) / 2 / 3
-          sigma = (np.log(abs(mean_grad)) / kn_size) * np.log(stride)
-          mask = create_heatmap(grad[j].shape[1], grad[j].shape[0], id_y, id_x, abs(sigma))
-          weighted_map *= mask
-          weighted_map = cv2.resize(weighted_map, (self.img_size[1], self.img_size[0]))
-          # weighted_map[weighted_map < 0.] = 0.
-          if mean_grad > 0:
-            score_saliency_map += weighted_map
-          else:
-            score_saliency_map -= weighted_map
+            map = map.squeeze().cpu().numpy()
+            grad = grad.squeeze().cpu().numpy()
 
-      score_saliency_map[score_saliency_map < 0.] = 0
-      score_saliency_map = (score_saliency_map - score_saliency_map.min()) / (score_saliency_map.max() - score_saliency_map.min() + eps)
+            # Calculate the proportion between the input image and the gradient map
+            stride = self.img_size[0] / grad.shape[1]
+            for j in range(map.shape[0]):
+                weighted_map = map[j]
+                mean_grad = np.mean(grad[j])
 
-      return score_saliency_map
+                # Get the center of the Gaussian mask
+                id_x, id_y = (grad[j] != 0).nonzero()
+                if len(id_x) == 0 or len(id_y) == 0:
+                    continue
 
+                id_x = id_x[0]
+                id_y = id_y[0]
 
-if __name__ == '__main__':
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
-    model = model.to(device)
-    model.eval()
+                # Weight the feature map
+                weighted_map = abs(mean_grad) * map[j]
+                kn_size = (
+                    math.floor(math.sqrt(grad.shape[1] * grad.shape[2]) - 1) / 2 / 3
+                )
+                sigma = (np.log(abs(mean_grad)) / kn_size) * np.log(stride)
+                mask = create_heatmap(
+                    grad[j].shape[1], grad[j].shape[0], id_y, id_x, abs(sigma)
+                )
+                weighted_map *= mask
+                weighted_map = cv2.resize(
+                    weighted_map, (self.img_size[1], self.img_size[0])
+                )
+                # weighted_map[weighted_map < 0.] = 0.
+                if mean_grad > 0:
+                    score_saliency_map += weighted_map
+                else:
+                    score_saliency_map -= weighted_map
 
-    img = Image.open('example.jpg')
-    img = F.to_tensor(img).unsqueeze(0).to(device)
-    box = [(100, 100), (200, 200), 0, 0.9]
-    gcame = GCAME(model, img_size=(640, 640))
-    saliency_map = gcame(img, box, index=0)
+        score_saliency_map[score_saliency_map < 0.0] = 0
+        score_saliency_map = (score_saliency_map - score_saliency_map.min()) / (
+            score_saliency_map.max() - score_saliency_map.min() + eps
+        )
+
+        return score_saliency_map

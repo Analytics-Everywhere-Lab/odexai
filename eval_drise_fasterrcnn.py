@@ -64,8 +64,7 @@ for img_path in tqdm(img_paths):
             n_samples=100,
             device=device,
         )
-        # Should compute the saliency map for each box, not just the first one
-        # box = boxes[0]
+        # Compute the saliency maps for all boxes
         for idx, box in enumerate(boxes):
             saliency_map = drise(img, box)
             saliency_maps[idx] = saliency_map

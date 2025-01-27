@@ -24,7 +24,7 @@ def del_ins(model, img, bbox, saliency_map, arch, mode='del', step=2000, kernel_
     count = np.zeros(80)
     HW = saliency_map.shape[1] * saliency_map.shape[2]
     n_steps = (HW + step - 1) // step
-    for idx in tqdm(range(saliency_map.shape[0])):
+    for idx in tqdm(range(saliency_map.shape[0]), desc="DEL/INS", leave=False):
         target_cls = bbox[idx][-1]
         if mode == 'del':
             start = img.copy()
