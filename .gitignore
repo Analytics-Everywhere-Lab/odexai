@@ -15,3 +15,7 @@ xai_methods/__pycache__/
 xai_methods/output/*
 test.png
 YOLOX/
+eval_dclose.py
+one_sample.ipynb
+dclose_output_sample.png
+YOLOX

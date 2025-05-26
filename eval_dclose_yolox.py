@@ -51,8 +51,6 @@ for img_path in tqdm(img_paths):
         file_name = img_path.split("/")[-1]
         img_name = file_name.split(".")[0]
 
-        obj_idx = 0
-
         # Run explanation
         with torch.no_grad():
             out = model(tensor_img.to(device))

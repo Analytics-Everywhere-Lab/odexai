@@ -17,7 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = models.yolox_l(pretrained=True)
 model.eval()
 transform = data_augment.ValTransform(legacy=False)
-output_dir = "xai_methods/output/drise"
+output_dir = "xai_methods/output/drise/yolox"
 os.makedirs(output_dir, exist_ok=True)
 
 drise = DRISE(arch="yolox", model=model, device=device)
@@ -36,7 +36,7 @@ img_paths = [
 
 info_data = coco_gt_loader()
 
-for img_path in tqdm(img_paths):
+for img_idx, img_path in tqdm(enumerate(img_paths), total=len(img_paths), desc="Img", leave=False):
     # try:
     # Read and transform image
     org_img = cv2.imread(img_path)
@@ -80,12 +80,17 @@ for img_path in tqdm(img_paths):
         
         gt_box, idx_correspond = correspond_box(box.cpu().numpy(), info_data[file_name])
         ebpg_img, pg_img, count_img = metric(gt_box, saliency_map[idx_correspond,:,:])
-        mean_ebpg.append(np.mean(ebpg_img[count != 0] / count[count != 0]))
-        mean_pg.append(np.mean(pg_img[count != 0] / count[count != 0]))
-        del_auc, count = del_ins(model, img_np, box, saliency_map, "del", step=2000)
-        ins_auc, count = del_ins(model, img_np, box, saliency_map, "ins", step=2000)
-        mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))
-        mean_ins_auc.append(np.mean(ins_auc[count != 0] / count[count != 0]))
+        ebpg = np.mean(ebpg[count != 0] / count[count != 0])
+        mean_ebpg.append(ebpg)
+        pg = np.mean(pg[count != 0] / count[count != 0])
+        mean_pg.append(pg)
+        del_auc, count = del_ins(model, img_np, box, saliency_map, "yolox", "del", step=2000)
+        ins_auc, count = del_ins(model, img_np, box, saliency_map, "yolox", "ins", step=2000)
+        del_auc = np.mean(del_auc[count != 0] / count[count != 0])
+        mean_del_auc.append(del_auc)
+        ins_auc = np.mean(ins_auc[count != 0] / count[count != 0])
+        mean_ins_auc.append(ins_auc)
+        print(f"Img {img_idx}: del_auc: {del_auc}, ins_auc: {ins_auc}, ebpg: {ebpg}, pg: {pg}")
     # except Exception as e:
     #     print(f"Error processing {img_path}: {e}")
     #     continue

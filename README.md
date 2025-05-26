@@ -28,10 +28,3 @@ pip install -r requirements.txt
 
 ## Notes
 - D-CLOSE outputs saliency maps for all predicted boxes from models (YOLOX, FasterRCNN)
-
-## TODOS
-- [] Fix code D-RISE for YOLOX
-- [] Evaluate D-RISE for YOLOX
-- [] Evaluate D-CLOSE for FasterRCNN
-- [x] Fix code evaluate G-CAME by generating saliency maps for all detected boxes
-- [] Evalaute G-CAME for FasterRCNN

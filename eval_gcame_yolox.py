@@ -31,7 +31,7 @@ target_layer = [
     "head.cls_convs.2.0.act",
     "head.cls_convs.2.1.act",
 ]
-gcame = GCAME(model, target_layer)
+gcame = GCAME(model, target_layer, arch="yolox")
 
 mean_del_auc = []
 mean_ins_auc = []
