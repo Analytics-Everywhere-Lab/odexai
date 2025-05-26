@@ -105,9 +105,9 @@ class DCLOSE(object):
 
         # info target vector
         num_objs = box.shape[0]
-        target_box = box[:, :4]  # shape [num_objs, 4]
-        target_scores = box[:, 5:-1]  # shape [num_objs, 80]
-        target_id = box[:, -1].reshape(num_objs, 1)  # shape [num_objs, 1]
+        target_box = box[:, :4]  
+        target_scores = box[:, 5:-1]  
+        target_id = box[:, -1].reshape(num_objs, 1)
 
         # Create array to save results
         res = np.zeros(
