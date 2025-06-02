@@ -14,6 +14,7 @@ from xai_methods.drise import DRISE
 from xai_methods.tool import (
     get_prediction_fasterrcnn,
     get_prediction_fasterrcnn_only_boxes,
+    get_prediction_fasterrcnn_dclose,
     visual,
 )
 from skimage.transform import resize
@@ -44,7 +45,6 @@ img_paths = [
 info_data = coco_gt_loader()
 
 
-
 for img_path in tqdm(img_paths):
     try:
         img = cv2.imread(img_path)
@@ -59,13 +59,16 @@ for img_path in tqdm(img_paths):
         img_name = file_name.split(".")[0]
         with torch.no_grad():
             prediction = model([inp.to(device)])
-            boxes = get_prediction_fasterrcnn(prediction, 0.8)
-
+            dclose_boxes = get_prediction_fasterrcnn_dclose(prediction, 0.8)
+            boxes, pred_cls, pred_scores = get_prediction_fasterrcnn(prediction, 0.8)
+            for i in range(len(boxes)):
+                boxes[i].append(pred_cls[i])
+                boxes[i].append(pred_scores[i])
             dclose = DCLOSE(
                 arch="faster-rcnn", model=model, img_size=(inp.shape[1:]), n_samples=100
             )
             # Compute the saliency maps for all boxes
-            saliency_maps = dclose(inp, boxes)
+            saliency_maps = dclose(inp, dclose_boxes)
             np.save(f"{output_dir}/{img_name}.npy", saliency_maps)
 
         # Calculate metrics
@@ -74,10 +77,10 @@ for img_path in tqdm(img_paths):
         # Convert each box to the desired format and store in a list
         formatted_boxes = []
         for box in boxes:
-            x_min, y_min = box[0], box[1]
-            x_max, y_max = box[2], box[3]
-            class_id = np.float32(box[4])
-            score = box[5]
+            x_min, y_min = box[0]
+            x_max, y_max = box[1]
+            class_id = np.float32(box[2])  # Convert integer to float32 for consistency
+            score = box[3]
             # Construct the row with an additional calculated confidence value
             formatted_boxes.append([x_min, y_min, x_max, y_max, score, class_id])
 
