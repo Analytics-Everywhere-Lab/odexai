@@ -107,7 +107,6 @@ for img_idx, img_path in tqdm(enumerate(img_paths), total=len(img_paths), desc="
             mean_del_auc.append(del_auc)
             ins_auc = np.mean(ins_auc[count != 0] / count[count != 0])
             mean_ins_auc.append(ins_auc)
-            print(f"Img {img_idx}: del_auc: {del_auc}, ins_auc: {ins_auc}, ebpg: {ebpg}, pg: {pg}")
     except Exception as e:
         print(f"Error processing {img_path}: {e}")
         continue

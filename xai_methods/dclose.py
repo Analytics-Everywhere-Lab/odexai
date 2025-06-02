@@ -19,7 +19,7 @@ class DCLOSE(object):
         model,
         img_size=(640, 640),
         n_segments=150,
-        n_levels=5,
+        n_levels=4,
         n_samples=4000,
         resize_offset=2.2,
         batch_size=32,
@@ -104,9 +104,9 @@ class DCLOSE(object):
         h, w = self.img_size  # height, width of input image
 
         # info target vector
-        num_objs = box.shape[0] 
-        target_box = box[:, :4]  
-        target_scores = box[:, 5:-1]  
+        num_objs = box.shape[0]
+        target_box = box[:, :4]
+        target_scores = box[:, 5:-1]
         target_id = box[:, -1].reshape(num_objs, 1)
 
         # Create array to save results
@@ -137,7 +137,7 @@ class DCLOSE(object):
             )
             zeros = np.where(data == 0)[0]
             mask = np.zeros(slic_seg[level_idx].shape).astype(float)
-            
+
             for z in zeros:
                 mask[slic_seg[level_idx] == z] = 1.0
 
@@ -149,16 +149,23 @@ class DCLOSE(object):
                 # crop mask
                 w_crop = np.random.randint(0, self.r * w + 1)
                 h_crop = np.random.randint(0, self.r * h + 1)
-                masks_np = mask[h_crop:h_crop + h, w_crop:w_crop + w]
+                masks_np = mask[h_crop : h_crop + h, w_crop : w_crop + w]
                 masks_np /= 255.0
                 masks_ts = torch.from_numpy(masks_np).to(self.device)
                 masks_ts = masks_ts.resize(1, 1, h, w)
                 density_map[level_idx] += masks_ts
 
                 per_img = masks_ts * img.cuda()
-                if self.arch == 'yolox':
+                if self.arch == "yolox":
                     p = self.model(per_img.to(self.device))
-                    p_box, p_index = postprocess(p, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True)
+                    p_box, p_index = postprocess(
+                        p,
+                        num_classes=80,
+                        conf_thre=0.25,
+                        nms_thre=0.45,
+                        class_agnostic=True,
+                        is_dclose_mode=True,
+                    )
                     p_box = p_box[0]
                     if p_box is None:
                         continue
@@ -175,16 +182,30 @@ class DCLOSE(object):
                         temp = coord[indices]  # ---> shape[num_boxes, 4]
                         if len(all_scores[indices]) == 0:
                             continue
-                        score_obj = 0.
+                        score_obj = 0.0
                         for k in range(temp.shape[0]):
                             # similarity score for each box
-                            distances = spatial.distance.cosine(all_scores[indices][k].cpu(), target_scores[idx].cpu())
-                            weights = math.sqrt(math.exp(-(distances ** 2) / self.kernel_width ** 2))
-                            iou = torchvision.ops.box_iou(temp[k].unsqueeze(0),
-                                                          target_box[idx].unsqueeze(0)).cpu().item()
-                            score_obj = max(score_obj, iou * weights * p_obj[indices][k].cpu().item())
+                            distances = spatial.distance.cosine(
+                                all_scores[indices][k].cpu(), target_scores[idx].cpu()
+                            )
+                            weights = math.sqrt(
+                                math.exp(-(distances**2) / self.kernel_width**2)
+                            )
+                            iou = (
+                                torchvision.ops.box_iou(
+                                    temp[k].unsqueeze(0), target_box[idx].unsqueeze(0)
+                                )
+                                .cpu()
+                                .item()
+                            )
+                            score_obj = max(
+                                score_obj,
+                                iou * weights * p_obj[indices][k].cpu().item(),
+                            )
                         max_score[idx] = score_obj
-                        res[level_idx][idx] += masks_ts.cpu().squeeze().numpy() * max_score[idx]
+                        res[level_idx][idx] += (
+                            masks_ts.cpu().squeeze().numpy() * max_score[idx]
+                        )
                 else:
                     p = self.model(per_img.to(self.device))
                     p_box = get_prediction_fasterrcnn_only_boxes(p, 0.8)

@@ -45,7 +45,7 @@ img_paths = [
 info_data = coco_gt_loader()
 
 
-for img_path in tqdm(img_paths):
+for img_idx, img_path in tqdm(enumerate(img_paths), total=len(img_paths), desc="Img", leave=False):
     try:
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # (427, 640, 3)
@@ -110,6 +110,7 @@ for img_path in tqdm(img_paths):
         )
         mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))
         mean_ins_auc.append(np.mean(ins_auc[count != 0] / count[count != 0]))
+        print(f"Img {img_idx}: del_auc: {del_auc}, ins_auc: {ins_auc}, ebpg: {ebpg}, pg: {pg}")    
     except Exception as e:
         print(f"Error processing {img_path}: {e}")
         continue

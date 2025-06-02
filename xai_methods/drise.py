@@ -107,38 +107,40 @@ class DRISE(object):
         np.random.seed(self.seed)
         h, w, c = img.shape
         self.img_size = (h, w)
-        saliency_map = np.zeros((h, w), dtype=np.float32)
         num_batches = (self.n_samples + self.batch_size - 1) // self.batch_size
 
         if self.arch == "yolox":
             transform = data_augment.ValTransform(legacy=False)
+            num_objs = box.shape[0]
             target_class = box[:, -1]
-            target_score = box[:, 5:-1]
             target_box = [
                 [(i[0], i[1]), (i[2], i[3])]
                 for i in list(box[:, :4].cpu().detach().numpy())
             ]
+            saliency_maps = np.zeros((num_objs, h, w), dtype=np.float32)
 
             # Batch processing for YOLOx
             for batch_idx in tqdm(range(num_batches)):
                 current_batch_size = min(
                     self.batch_size, self.n_samples - batch_idx * self.batch_size
                 )
-                
+
                 # Generate batch of masks and masked images
                 masks = np.zeros((current_batch_size, h, w), dtype=np.float32)
                 masked_images = []
-                
+
                 for i in range(current_batch_size):
                     mask = self.generate_mask()
                     masks[i] = mask
                     masked = self.mask_image(img, mask)
                     masked, _ = transform(masked, None, (640, 640))
                     masked_images.append(masked)
-                
+
                 # Stack masked images into batch tensor
-                masked_batch = torch.stack([torch.from_numpy(img) for img in masked_images]).float()
-                
+                masked_batch = torch.stack(
+                    [torch.from_numpy(img) for img in masked_images]
+                ).float()
+
                 # Process entire batch at once
                 self.model.zero_grad()
                 with torch.no_grad():
@@ -150,14 +152,14 @@ class DRISE(object):
                         nms_thre=0.45,
                         class_agnostic=True,
                     )
-                
+
                 # Process each prediction in the batch
                 for i in range(current_batch_size):
                     p_box_single = p_box[i] if p_box[i] is not None else None
-                    
+
                     if p_box_single is None:
                         continue
-                        
+
                     pred_class = list(p_box_single[:, -1].cpu().numpy())
                     pred_boxes = [
                         [(j[0], j[1]), (j[2], j[3])]
@@ -173,25 +175,34 @@ class DRISE(object):
                     pred_boxes = pred_boxes[: pred_t + 1]
                     pred_class = pred_class[: pred_t + 1]
                     scores = pred_score[: pred_t + 1]
-                    
-                    ious = []
-                    all_scores_map = []
-                    
-                    for b in range(len(pred_boxes)):
-                        if (pred_class[b] != target_class).all():
-                            continue
-                        else:
-                            new_bbox = list(pred_boxes[b][0]) + list(pred_boxes[b][1])
-                            ious_with_targets = [bbox_iou(new_bbox, list(tb[0]) + list(tb[1])) for tb in target_box]
-                            iou = max(ious_with_targets)
-                            ious.append(iou)
-                            all_scores_map.append(scores[b])
 
-                    if len(ious) == 0:
-                        continue
-                        
-                    t = masks[i] * np.max(ious) * all_scores_map[np.argmax(ious)]
-                    saliency_map += t
+                    # Process each target object separately
+                    for target_idx in range(num_objs):
+                        target_cls = target_class[target_idx]
+                        target_bbox = target_box[target_idx]
+
+                        best_iou = 0.0
+                        best_score = 0.0
+
+                        # Find the best matching prediction for this target object
+                        for b in range(len(pred_boxes)):
+                            if pred_class[b] != target_cls:
+                                continue
+
+                            new_bbox = list(pred_boxes[b][0]) + list(pred_boxes[b][1])
+                            target_bbox_flat = list(target_bbox[0]) + list(
+                                target_bbox[1]
+                            )
+                            iou = bbox_iou(new_bbox, target_bbox_flat)
+
+                            if iou > best_iou:
+                                best_iou = iou
+                                best_score = scores[b]
+
+                        # Update saliency map for this specific target object
+                        if best_iou > 0:
+                            saliency_contribution = masks[i] * best_iou * best_score
+                            saliency_maps[target_idx] += saliency_contribution
         else:
             transform = T.Compose([T.ToTensor()])
 
@@ -257,9 +268,9 @@ class DRISE(object):
                         continue
 
                     t = masks[i] * np.max(ious) * all_scores_map[np.argmax(ious)]
-                    saliency_map += t
+                    saliency_maps += t
 
-        M, m = saliency_map.max(), saliency_map.min()
-        saliency_map = (saliency_map - m) / (M - m)
+        M, m = saliency_maps.max(), saliency_maps.min()
+        saliency_maps = (saliency_maps - m) / (M - m)
 
-        return saliency_map
+        return saliency_maps

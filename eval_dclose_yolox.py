@@ -38,7 +38,7 @@ img_paths = [
 
 info_data = coco_gt_loader()
 
-for img_path in tqdm(img_paths):
+for img_idx, img_path in tqdm(enumerate(img_paths), total=len(img_paths), desc="Img", leave=False):
     try:
         # Read and transform image
         org_img = cv2.imread(img_path)
@@ -55,7 +55,7 @@ for img_path in tqdm(img_paths):
         with torch.no_grad():
             out = model(tensor_img.to(device))
             box, index = postprocess(
-                out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True
+                out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True, is_dclose_mode=True
             )
             box = box[0]
             if box is None:
@@ -82,6 +82,7 @@ for img_path in tqdm(img_paths):
                 saliency_map=saliency_maps,
                 arch="yolox",
                 mode="del",
+                is_dclose_mode=True,
                 step=2000,
             )
             ins_auc, count = del_ins(
@@ -91,6 +92,7 @@ for img_path in tqdm(img_paths):
                 saliency_map=saliency_maps,
                 arch="yolox",
                 mode="ins",
+                is_dclose_mode=True,
                 step=2000,
             )
             mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))

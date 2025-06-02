@@ -61,7 +61,7 @@ for img_path in tqdm(img_paths):
                 arch="fasterrcnn",
                 model=model,
                 img_size=(h, w),
-                n_samples=2000,
+                n_samples=100,
                 device=device,
             )
             # Compute the saliency maps for all boxes
