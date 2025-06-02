@@ -8,7 +8,6 @@ from YOLOX.yolox.utils import postprocess
 from data.coco.dataloader import coco_dataloader
 from metrics.pp_ebpg import correspond_box, metric
 from metrics.del_ins import del_ins
-from xai_methods.dclose import DCLOSE
 from xai_methods.gcame import GCAME
 from data.coco.dataloader import coco_gt_loader
 import os
