@@ -46,63 +46,67 @@ info_data = coco_gt_loader()
 
 
 for img_path in tqdm(img_paths):
-    img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # (427, 640, 3)
-    h, w, c = img.shape
-    transform = T.Compose([T.ToTensor()])
-    # preprocess image
-    inp = transform(img)
-    img_np = inp.numpy().transpose(1, 2, 0)
-    img_np = (255 * img_np).astype(np.uint8)
-    file_name = img_path.split("/")[-1]
-    img_name = file_name.split(".")[0]
-    with torch.no_grad():
-        prediction = model([inp.to(device)])
-        boxes = get_prediction_fasterrcnn(prediction, 0.8)
+    try:
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # (427, 640, 3)
+        h, w, c = img.shape
+        transform = T.Compose([T.ToTensor()])
+        # preprocess image
+        inp = transform(img)
+        img_np = inp.numpy().transpose(1, 2, 0)
+        img_np = (255 * img_np).astype(np.uint8)
+        file_name = img_path.split("/")[-1]
+        img_name = file_name.split(".")[0]
+        with torch.no_grad():
+            prediction = model([inp.to(device)])
+            boxes = get_prediction_fasterrcnn(prediction, 0.8)
 
-        dclose = DCLOSE(
-            arch="faster-rcnn", model=model, img_size=(inp.shape[1:]), n_samples=100
+            dclose = DCLOSE(
+                arch="faster-rcnn", model=model, img_size=(inp.shape[1:]), n_samples=100
+            )
+            # Compute the saliency maps for all boxes
+            saliency_maps = dclose(inp, boxes)
+            np.save(f"{output_dir}/{img_name}.npy", saliency_maps)
+
+        # Calculate metrics
+        saliency_maps = np.load(f"{output_dir}/{img_name}.npy")
+
+        # Convert each box to the desired format and store in a list
+        formatted_boxes = []
+        for box in boxes:
+            x_min, y_min = box[0], box[1]
+            x_max, y_max = box[2], box[3]
+            class_id = np.float32(box[4])
+            score = box[5]
+            # Construct the row with an additional calculated confidence value
+            formatted_boxes.append([x_min, y_min, x_max, y_max, score, class_id])
+
+        gt_box, idx_correspond = correspond_box(formatted_boxes, info_data[file_name])
+        if len(idx_correspond) == 0:
+            continue
+        ebpg, pg, count = metric(gt_box, saliency_maps[idx_correspond, :, :])
+        mean_ebpg.append(np.mean(ebpg[count != 0] / count[count != 0]))
+        mean_pg.append(np.mean(pg[count != 0] / count[count != 0]))
+        del_auc, count = del_ins(
+            model=model,
+            img=img,
+            bbox=formatted_boxes,
+            saliency_map=saliency_maps,
+            arch="fasterrcnn",
+            mode="del",
+            step=2000,
         )
-        # Compute the saliency maps for all boxes
-        saliency_maps = dclose(inp, boxes)
-        np.save(f"{output_dir}/{img_name}.npy", saliency_maps)
-
-    # Calculate metrics
-    saliency_maps = np.load(f"{output_dir}/{img_name}.npy")
-
-    # Convert each box to the desired format and store in a list
-    formatted_boxes = []
-    for box in boxes:
-        x_min, y_min = box[0], box[1]
-        x_max, y_max = box[2], box[3]
-        class_id = np.float32(box[4])
-        score = box[5]
-        # Construct the row with an additional calculated confidence value
-        formatted_boxes.append([x_min, y_min, x_max, y_max, score, class_id])
-
-    gt_box, idx_correspond = correspond_box(formatted_boxes, info_data[file_name])
-    if len(idx_correspond) == 0:
+        ins_auc, count = del_ins(
+            model=model,
+            img=img,
+            bbox=formatted_boxes,
+            saliency_map=saliency_maps,
+            arch="fasterrcnn",
+            mode="ins",
+            step=2000,
+        )
+        mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))
+        mean_ins_auc.append(np.mean(ins_auc[count != 0] / count[count != 0]))
+    except Exception as e:
+        print(f"Error processing {img_path}: {e}")
         continue
-    ebpg, pg, count = metric(gt_box, saliency_maps[idx_correspond, :, :])
-    mean_ebpg.append(np.mean(ebpg[count != 0] / count[count != 0]))
-    mean_pg.append(np.mean(pg[count != 0] / count[count != 0]))
-    del_auc, count = del_ins(
-        model=model,
-        img=img,
-        bbox=formatted_boxes,
-        saliency_map=saliency_maps,
-        arch="fasterrcnn",
-        mode="del",
-        step=2000,
-    )
-    ins_auc, count = del_ins(
-        model=model,
-        img=img,
-        bbox=formatted_boxes,
-        saliency_map=saliency_maps,
-        arch="fasterrcnn",
-        mode="ins",
-        step=2000,
-    )
-    mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))
-    mean_ins_auc.append(np.mean(ins_auc[count != 0] / count[count != 0]))
