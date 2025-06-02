@@ -58,10 +58,8 @@ for img_path in tqdm(img_paths):
     img_name = file_name.split(".")[0]
     with torch.no_grad():
         prediction = model([inp.to(device)])
-        boxes, pred_cls, pred = get_prediction_fasterrcnn(prediction, 0.8)
-        for i in range(len(boxes)):
-            boxes[i].append(pred_cls[i])
-            boxes[i].append(pred[i])
+        boxes = get_prediction_fasterrcnn(prediction, 0.8)
+
         dclose = DCLOSE(
             arch="faster-rcnn", model=model, img_size=(inp.shape[1:]), n_samples=100
         )
@@ -75,10 +73,10 @@ for img_path in tqdm(img_paths):
     # Convert each box to the desired format and store in a list
     formatted_boxes = []
     for box in boxes:
-        x_min, y_min = box[0]
-        x_max, y_max = box[1]
-        class_id = np.float32(box[2])  # Convert integer to float32 for consistency
-        score = box[3]
+        x_min, y_min = box[0], box[1]
+        x_max, y_max = box[2], box[3]
+        class_id = np.float32(box[4])
+        score = box[5]
         # Construct the row with an additional calculated confidence value
         formatted_boxes.append([x_min, y_min, x_max, y_max, score, class_id])
 

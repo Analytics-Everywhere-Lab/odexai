@@ -85,8 +85,7 @@ for img_path in tqdm(img_paths):
     gt_box, idx_correspond = correspond_box(formatted_boxes, info_data[file_name])
     if len(idx_correspond) == 0:
         continue
-    # Should extend to 3D array where first dim is the number of saliency maps
-    # resized_saliency_map = np.expand_dims(resized_saliency_map, axis=0)
+
     ebpg, pg, count = metric(gt_box, saliency_maps[idx_correspond, :, :])
     mean_ebpg.append(np.mean(ebpg[count != 0] / count[count != 0]))
     mean_pg.append(np.mean(pg[count != 0] / count[count != 0]))

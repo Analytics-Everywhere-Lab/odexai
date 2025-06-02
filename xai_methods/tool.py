@@ -108,16 +108,11 @@ def get_prediction_fasterrcnn(pred, threshold):
     """
     get_prediction_fasterrcnn_only_boxes
       Parameters:
-        - img_path - path of the input image
+        - pred - prediction output from FasterRCNN model
         - threshold - threshold value for prediction score
-        - Image is obtained from the image path
-        - the image is converted to image tensor using PyTorch's Transforms
-        - image is passed through the model to get the predictions
-        - class, box coordinates are obtained, but only prediction score > threshold
-          are chosen.
-
+        - Returns numpy array of shape (n, 6) where each row is:
+          [x1, y1, x2, y2, confidence_score, class_id]
     """
-
     pred_class = pred[0]["labels"].cpu().numpy()
     pred_class = [
         COCO_FASTERRCNN_INDEX_DICT.get(cls, -1) - 1
@@ -125,21 +120,39 @@ def get_prediction_fasterrcnn(pred, threshold):
         if cls in COCO_FASTERRCNN_INDEX_DICT
     ]  # -1 for background
 
-    pred_boxes = [
-        [(i[0], i[1]), (i[2], i[3])]
-        for i in list(pred[0]["boxes"].cpu().detach().numpy())
-    ]
+    pred_boxes = list(pred[0]["boxes"].cpu().detach().numpy())
     pred_score = list(pred[0]["scores"].cpu().detach().numpy())
-    pred_t = [pred_score.index(x) for x in pred_score if x > threshold]
+    
+    # Find indices of predictions above threshold
+    pred_t = [i for i, x in enumerate(pred_score) if x > threshold]
+    
     if len(pred_t) == 0:
         flag = 0.0
         return flag
     else:
+        # Take the last index (highest scoring predictions above threshold)
         pred_t = pred_t[-1]
-    pred_boxes = pred_boxes[: pred_t + 1]
-    pred_class = pred_class[: pred_t + 1]
-    scores = pred_score[: pred_t + 1]
-    return pred_boxes, pred_class, scores
+    
+    # Filter predictions up to the threshold index
+    filtered_boxes = pred_boxes[: pred_t + 1]
+    filtered_classes = pred_class[: pred_t + 1]
+    filtered_scores = pred_score[: pred_t + 1]
+    
+    # Create numpy array in desired format: [x1, y1, x2, y2, confidence_score, class_id]
+    boxes = []
+    for i in range(len(filtered_boxes)):
+        box = filtered_boxes[i]
+        score = filtered_scores[i]
+        class_id = filtered_classes[i]
+        
+        # Flatten coordinates and arrange as [x1, y1, x2, y2, confidence_score, class_id]
+        row = [box[0], box[1], box[2], box[3], score, float(class_id)]
+        boxes.append(row)
+    
+    # Convert to numpy array
+    boxes = np.array(boxes, dtype=np.float32)
+    
+    return boxes
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True):

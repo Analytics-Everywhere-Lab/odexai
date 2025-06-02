@@ -104,7 +104,7 @@ class DCLOSE(object):
         h, w = self.img_size  # height, width of input image
 
         # info target vector
-        num_objs = box.shape[0]
+        num_objs = box.shape[0] 
         target_box = box[:, :4]  
         target_scores = box[:, 5:-1]  
         target_id = box[:, -1].reshape(num_objs, 1)
@@ -151,9 +151,7 @@ class DCLOSE(object):
                 masks_ts = torch.from_numpy(masks_np).to(self.device)
                 masks_ts = masks_ts.resize(1, 1, h, w)
                 density_map[level_idx] += masks_ts
-
-                # Forward pass with the masked image
-                per_img = masks_ts * img.cuda()
+                per_img = masks_ts * img.cuda() 
                 if self.arch == "yolox":
                     p = self.model(per_img.to(self.device))
                     p_box, _ = postprocess(
@@ -162,6 +160,7 @@ class DCLOSE(object):
                         conf_thre=0.25,
                         nms_thre=0.45,
                         class_agnostic=True,
+                        is_dclose_mode=True,
                     )
                     p_box = p_box[0]
                     if p_box is None:
@@ -183,8 +182,11 @@ class DCLOSE(object):
                         score_obj = 0.0
                         for k in range(temp.shape[0]):
                             # similarity score for each box
+                            target_class = int(target_id[idx].cpu().item())
+                            target_class_score = all_scores[indices][k][target_class].cpu()
                             distances = spatial.distance.cosine(
-                                all_scores[indices][k].cpu(), target_scores[idx].cpu()
+                                all_scores[indices][k].cpu(), 
+                                torch.zeros_like(all_scores[indices][k].cpu()).scatter_(0, torch.tensor(target_class), target_class_score)
                             )
                             weights = math.sqrt(
                                 math.exp(-(distances**2) / self.kernel_width**2)

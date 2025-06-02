@@ -6,10 +6,11 @@ import torchvision
 from PIL import Image
 from torchvision import transforms as T
 from tqdm import tqdm
-from xai_methods.tool import get_prediction_fasterrcnn, get_prediction_fasterrcnn_only_boxes
+from xai_methods.tool import get_prediction_fasterrcnn_only_boxes
 from yolox.utils import postprocess
 import YOLOX.yolox.data.data_augment as data_augment
 from data.coco.coco_dict import COCO_FASTERRCNN_INDEX_DICT
+
 
 def bbox_iou(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
@@ -102,7 +103,7 @@ class DRISE(object):
     def generate_saliency_map(self, img, box, obj_idx=None):
         if obj_idx is not None:
             box = box[[obj_idx], :]
-        
+
         np.random.seed(self.seed)
         h, w, c = img.shape
         self.img_size = (h, w)
@@ -111,58 +112,84 @@ class DRISE(object):
 
         if self.arch == "yolox":
             transform = data_augment.ValTransform(legacy=False)
-
             target_class = box[:, -1]
+            target_score = box[:, 5:-1]
             target_box = [
                 [(i[0], i[1]), (i[2], i[3])]
                 for i in list(box[:, :4].cpu().detach().numpy())
             ]
-            
-            for batch_idx in tqdm(range(num_batches), desc="DRISE", leave=False):
+
+            # Batch processing for YOLOx
+            for batch_idx in tqdm(range(num_batches)):
                 current_batch_size = min(
                     self.batch_size, self.n_samples - batch_idx * self.batch_size
                 )
+                
+                # Generate batch of masks and masked images
                 masks = np.zeros((current_batch_size, h, w), dtype=np.float32)
-                masked_images = np.zeros((current_batch_size, h, w, c), dtype=np.uint8)
-
+                masked_images = []
+                
                 for i in range(current_batch_size):
                     mask = self.generate_mask()
                     masks[i] = mask
-                    masked_images[i] = self.mask_image(img, mask)
-
-                masked_images = [
-                    transform(Image.fromarray(img)) for img in masked_images
-                ]
-                masked_images = torch.stack(masked_images).to(self.device)
-
+                    masked = self.mask_image(img, mask)
+                    masked, _ = transform(masked, None, (640, 640))
+                    masked_images.append(masked)
+                
+                # Stack masked images into batch tensor
+                masked_batch = torch.stack([torch.from_numpy(img) for img in masked_images]).float()
+                
+                # Process entire batch at once
+                self.model.zero_grad()
                 with torch.no_grad():
-                    predictions = get_prediction_fasterrcnn_only_boxes(
-                        self.model, masked_images, 0.25
+                    p = self.model(masked_batch.to(self.device))
+                    p_box, _ = postprocess(
+                        p,
+                        num_classes=80,
+                        conf_thre=0.25,
+                        nms_thre=0.45,
+                        class_agnostic=True,
                     )
-
+                
+                # Process each prediction in the batch
                 for i in range(current_batch_size):
+                    p_box_single = p_box[i] if p_box[i] is not None else None
+                    
+                    if p_box_single is None:
+                        continue
+                        
+                    pred_class = list(p_box_single[:, -1].cpu().numpy())
                     pred_boxes = [
-                        [(b[0], b[1]), (b[2], b[3])]
-                        for b in predictions[i]
+                        [(j[0], j[1]), (j[2], j[3])]
+                        for j in list(p_box_single[:, :4].cpu().detach().numpy())
                     ]
-                    pred_scores = [1.0 for _ in range(len(pred_boxes))]
-                    pred_classes = [0 for _ in range(len(pred_boxes))]
+                    pred_score = list(p_box_single[:, 4].cpu().detach().numpy())
 
+                    pred_t = [pred_score.index(x) for x in pred_score if x > 0.5]
+                    if len(pred_t) == 0:
+                        continue
+
+                    pred_t = pred_t[-1]
+                    pred_boxes = pred_boxes[: pred_t + 1]
+                    pred_class = pred_class[: pred_t + 1]
+                    scores = pred_score[: pred_t + 1]
+                    
                     ious = []
                     all_scores_map = []
-
+                    
                     for b in range(len(pred_boxes)):
-                        if pred_classes[b] not in target_class:
+                        if (pred_class[b] != target_class).all():
                             continue
                         else:
                             new_bbox = list(pred_boxes[b][0]) + list(pred_boxes[b][1])
-                            iou = bbox_iou(new_bbox, target_box[target_class.index(pred_classes[b])])
+                            ious_with_targets = [bbox_iou(new_bbox, list(tb[0]) + list(tb[1])) for tb in target_box]
+                            iou = max(ious_with_targets)
                             ious.append(iou)
-                            all_scores_map.append(pred_scores[b])
+                            all_scores_map.append(scores[b])
 
                     if len(ious) == 0:
                         continue
-
+                        
                     t = masks[i] * np.max(ious) * all_scores_map[np.argmax(ious)]
                     saliency_map += t
         else:
@@ -236,16 +263,3 @@ class DRISE(object):
         saliency_map = (saliency_map - m) / (M - m)
 
         return saliency_map
-
-
-# if __name__ == '__main__':
-#     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
-#     model = model.to(device)
-#     model.eval()
-
-#     img = Image.open('data/000000008021.jpg')
-#     img = np.array(img)
-#     box = [(0, 0), (100, 100), 1, 0.9]
-
-#     drise = DRISE(model, device=device)
-#     saliency_map = drise(img, box)

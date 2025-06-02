@@ -14,19 +14,21 @@ from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Get pretrained model and its transform function
 model = models.yolox_l(pretrained=True)
 model.eval()
 transform = data_augment.ValTransform(legacy=False)
 output_dir = "xai_methods/output/drise/yolox"
 os.makedirs(output_dir, exist_ok=True)
 
-drise = DRISE(arch="yolox", model=model, device=device)
+dclose = DRISE(arch="yolox", model=model, device=device, img_size=(640, 640), n_samples=100)
 
 mean_del_auc = []
 mean_ins_auc = []
 mean_ebpg = []
 mean_pg = []
 
+# Load all images in the validation folder
 img_folder = "data/coco/val2017/"
 img_paths = [
     os.path.join(img_folder, img_name)
@@ -36,7 +38,7 @@ img_paths = [
 
 info_data = coco_gt_loader()
 
-for img_idx, img_path in tqdm(enumerate(img_paths), total=len(img_paths), desc="Img", leave=False):
+for img_path in tqdm(img_paths):
     # try:
     # Read and transform image
     org_img = cv2.imread(img_path)
@@ -48,49 +50,52 @@ for img_idx, img_path in tqdm(enumerate(img_paths), total=len(img_paths), desc="
     img = torch.from_numpy(transformed_img).unsqueeze(0).float()
     img_np = img.squeeze().numpy().transpose(1, 2, 0).astype(np.uint8)
     file_name = img_path.split("/")[-1]
-    name_img = file_name.split(".")[0]
-
-    obj_idx = 0
-    del_auc = np.zeros(80)
-    ins_auc = np.zeros(80)
-    count = np.zeros(80)
+    img_name = file_name.split(".")[0]
 
     # Run explanation
     with torch.no_grad():
         out = model(img.to(device))
         box, index = postprocess(
-            out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True
+            out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True, is_dclose_mode=True
         )
         box = box[0]
-        rs = drise(transposed_transformed_img, box)
         if box is None:
             continue
-    # visual(img_np, rs, box.cpu(), arch="yolox", save_file="test.png")
-    np.save(f"{output_dir}/{name_img}.npy", rs)
+        saliency_maps = dclose(transposed_transformed_img, box)
+        
+        np.save(f"{output_dir}/{img_name}.npy", saliency_maps)
 
     with torch.no_grad():
-        out = model(img.to(device))
-        box, index = postprocess(
-            out, num_classes=80, conf_thre=0.25, nms_thre=0.45, class_agnostic=True
+        saliency_maps = np.load(f"{output_dir}/{img_name}.npy")
+        gt_box, idx_correspond = correspond_box(
+            box.cpu().numpy(), info_data[file_name]
         )
-        box = box[0]
-        if box is None:
-            continue
-        saliency_map = np.load(f"{output_dir}/{name_img}.npy")
-        
-        gt_box, idx_correspond = correspond_box(box.cpu().numpy(), info_data[file_name])
-        ebpg_img, pg_img, count_img = metric(gt_box, saliency_map[idx_correspond,:,:])
-        ebpg = np.mean(ebpg[count != 0] / count[count != 0])
-        mean_ebpg.append(ebpg)
-        pg = np.mean(pg[count != 0] / count[count != 0])
-        mean_pg.append(pg)
-        del_auc, count = del_ins(model, img_np, box, saliency_map, "yolox", "del", step=2000)
-        ins_auc, count = del_ins(model, img_np, box, saliency_map, "yolox", "ins", step=2000)
-        del_auc = np.mean(del_auc[count != 0] / count[count != 0])
-        mean_del_auc.append(del_auc)
-        ins_auc = np.mean(ins_auc[count != 0] / count[count != 0])
-        mean_ins_auc.append(ins_auc)
-        print(f"Img {img_idx}: del_auc: {del_auc}, ins_auc: {ins_auc}, ebpg: {ebpg}, pg: {pg}")
+        ebpg, pg, count = metric(
+            gt_box, np.array([saliency_maps for _ in idx_correspond])
+        )
+        mean_ebpg.append(np.mean(ebpg[count != 0] / count[count != 0]))
+        mean_pg.append(np.mean(pg[count != 0] / count[count != 0]))
+
+        del_auc, count = del_ins(
+            model=model,
+            img=img_np,
+            bbox=box,
+            saliency_map=saliency_maps,
+            arch="yolox",
+            mode="del",
+            step=2000,
+        )
+        ins_auc, count = del_ins(
+            model=model,
+            img=img_np,
+            bbox=box,
+            saliency_map=saliency_maps,
+            arch="yolox",
+            mode="ins",
+            step=2000,
+        )
+        mean_del_auc.append(np.mean(del_auc[count != 0] / count[count != 0]))
+        mean_ins_auc.append(np.mean(ins_auc[count != 0] / count[count != 0]))
     # except Exception as e:
     #     print(f"Error processing {img_path}: {e}")
     #     continue
